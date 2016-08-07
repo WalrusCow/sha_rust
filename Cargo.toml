@@ -1,0 +1,6 @@
+[package]
+name = "sha"
+version = "0.1.0"
+authors = ["WalrusCow <willgmcd@gmail.com>"]
+
+[dependencies]
