@@ -130,7 +130,7 @@ impl Sha256Digestion {
     }
 
     /// Produce the final hash value
-    pub fn digest(mut self) -> [u32; 8] {
+    pub fn digest(mut self) -> [u8; 32] {
         // We know this fits (or add_byte would have flushed)
         self.reading_block.push(0x80);
 
@@ -155,9 +155,16 @@ impl Sha256Digestion {
         }
         self.update_hash_state();
         self.reading_block.clear();
-        // Now just to return the values
-        // TODO: Into a byte array
-        self.hash_state
+
+        let mut hash_output: [u8; 32] = [0; 32];
+        for (i, h) in self.hash_state.iter().enumerate() {
+            hash_output[(i * 4)] = (h >> 24) as u8;
+            hash_output[(i * 4) + 1] = (h >> 16) as u8;
+            hash_output[(i * 4) + 2] = (h >> 8) as u8;
+            hash_output[(i * 4) + 3] = *h as u8;
+        }
+
+        hash_output
     }
 
     /// Add a single byte to the digest
