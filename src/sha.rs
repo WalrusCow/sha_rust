@@ -5,28 +5,28 @@ fn rot_r(val: u32, rot: u32) -> u32 {
     (val >> rot) | (val << (32 - rot))
 }
 
-fn ch(x: u32, y: u32, z: u32) -> u32 {
+fn ch(x: Wrapping<u32>, y: Wrapping<u32>, z: Wrapping<u32>) -> Wrapping<u32> {
     (x & y) ^ (!x & z)
 }
 
-fn maj(x: u32, y: u32, z: u32) -> u32 {
+fn maj(x: Wrapping<u32>, y: Wrapping<u32>, z: Wrapping<u32>) -> Wrapping<u32> {
     (x & y) ^ (x & z) ^ (y & z)
 }
 
-fn b_sigma_0(x: u32) -> u32 {
-    rot_r(x, 2) ^ rot_r(x, 13) ^ rot_r(x, 22)
+fn b_sigma_0(x: Wrapping<u32>) -> Wrapping<u32> {
+    Wrapping(rot_r(x.0, 2) ^ rot_r(x.0, 13) ^ rot_r(x.0, 22))
 }
 
-fn b_sigma_1(x: u32) -> u32 {
-    rot_r(x, 6) ^ rot_r(x, 11) ^ rot_r(x, 25)
+fn b_sigma_1(x: Wrapping<u32>) -> Wrapping<u32> {
+    Wrapping(rot_r(x.0, 6) ^ rot_r(x.0, 11) ^ rot_r(x.0, 25))
 }
 
-fn l_sigma_0(x: u32) -> u32 {
-    rot_r(x, 7) ^ rot_r(x, 18) ^ (x >> 3)
+fn l_sigma_0(x: Wrapping<u32>) -> Wrapping<u32> {
+    Wrapping(rot_r(x.0, 7) ^ rot_r(x.0, 18) ^ (x.0 >> 3))
 }
 
-fn l_sigma_1(x: u32) -> u32 {
-    rot_r(x, 17) ^ rot_r(x, 19) ^ (x >> 10)
+fn l_sigma_1(x: Wrapping<u32>) -> Wrapping<u32> {
+    Wrapping(rot_r(x.0, 17) ^ rot_r(x.0, 19) ^ (x.0 >> 10))
 }
 
 // Intial hash state
@@ -58,7 +58,7 @@ const BLOCK_SIZE_BYTES: usize = 64;
 
 pub struct Sha256Digestion {
     // Current state of the hash
-    hash_state: [u32; 8],
+    hash_state: [Wrapping<u32>; 8],
     // This is the block we will read the inputs into.
     // To be later converted into u32s for actual sha operations
     reading_block: Vec<u8>,
@@ -68,19 +68,33 @@ pub struct Sha256Digestion {
 
 impl Sha256Digestion {
     pub fn new() -> Sha256Digestion {
+        let mut hash_state = [Wrapping(0u32); 8];
+        for (i, h) in INITIAL_HASH_STATE.iter().enumerate() {
+            hash_state[i] = Wrapping(*h);
+        }
+
         Sha256Digestion {
-            hash_state: INITIAL_HASH_STATE,
+            hash_state: hash_state,
             reading_block: Vec::with_capacity(BLOCK_SIZE_BYTES),
             bit_count: 0,
         }
     }
 
     fn update_hash_state(&mut self) -> () {
-        // Convert u8s into u32s
-        let mut message_block: Vec<u32> = Vec::with_capacity(16);
-        for chunk in self.reading_block.chunks(4) {
+        let mut sched = [Wrapping(0u32); 64];
+        let mut a = self.hash_state[0];
+        let mut b = self.hash_state[1];
+        let mut c = self.hash_state[2];
+        let mut d = self.hash_state[3];
+        let mut e = self.hash_state[4];
+        let mut f = self.hash_state[5];
+        let mut g = self.hash_state[6];
+        let mut h = self.hash_state[7];
+
+        for (i, chunk) in self.reading_block.chunks(4).enumerate() {
+            // Convert u8s into u32s and populate the message schedule
             assert!(chunk.len() == 4);
-            message_block.push(
+            sched[i] = Wrapping(
                 (chunk[0] as u32) << 24 |
                 (chunk[1] as u32) << 16 |
                 (chunk[2] as u32) << 8 |
@@ -88,27 +102,16 @@ impl Sha256Digestion {
             );
         }
 
-        let mut sched: [u32; 64] = [0; 64];
-        let mut a: Wrapping<u32> = Wrapping(self.hash_state[0]);
-        let mut b: Wrapping<u32> = Wrapping(self.hash_state[1]);
-        let mut c: Wrapping<u32> = Wrapping(self.hash_state[2]);
-        let mut d: Wrapping<u32> = Wrapping(self.hash_state[3]);
-        let mut e: Wrapping<u32> = Wrapping(self.hash_state[4]);
-        let mut f: Wrapping<u32> = Wrapping(self.hash_state[5]);
-        let mut g: Wrapping<u32> = Wrapping(self.hash_state[6]);
-        let mut h: Wrapping<u32> = Wrapping(self.hash_state[7]);
-
-        for (i, m) in message_block.iter().enumerate() {
-            sched[i] = *m;
-        }
+        // Populate the rest of the message schedule
         for t in 16..64 {
-            sched[t] = (Wrapping(l_sigma_1(sched[t-2])) + Wrapping(sched[t-7]) + Wrapping(l_sigma_0(sched[t-15])) + Wrapping(sched[t-16])).0;
+            sched[t] = l_sigma_1(sched[t - 2]) + sched[t - 7] +
+                l_sigma_0(sched[t - 15]) + sched[t - 16];
         }
 
         // TODO: Use zip(K, sched)
         for t in 0..64 {
-            let t1 = h + Wrapping(b_sigma_1(e.0)) + Wrapping(ch(e.0, f.0, g.0)) + Wrapping(K[t]) + Wrapping(sched[t]);
-            let t2 = Wrapping(b_sigma_0(a.0)) + Wrapping(maj(a.0, b.0, c.0));
+            let t1 = h + b_sigma_1(e) + ch(e, f, g) + Wrapping(K[t]) + sched[t];
+            let t2 = b_sigma_0(a) + maj(a, b, c);
             h = g;
             g = f;
             f = e;
@@ -119,14 +122,14 @@ impl Sha256Digestion {
             a = t1 + t2;
         }
 
-        self.hash_state[0] = (Wrapping(self.hash_state[0]) + a).0;
-        self.hash_state[1] = (Wrapping(self.hash_state[1]) + b).0;
-        self.hash_state[2] = (Wrapping(self.hash_state[2]) + c).0;
-        self.hash_state[3] = (Wrapping(self.hash_state[3]) + d).0;
-        self.hash_state[4] = (Wrapping(self.hash_state[4]) + e).0;
-        self.hash_state[5] = (Wrapping(self.hash_state[5]) + f).0;
-        self.hash_state[6] = (Wrapping(self.hash_state[6]) + g).0;
-        self.hash_state[7] = (Wrapping(self.hash_state[7]) + h).0;
+        self.hash_state[0] += a;
+        self.hash_state[1] += b;
+        self.hash_state[2] += c;
+        self.hash_state[3] += d;
+        self.hash_state[4] += e;
+        self.hash_state[5] += f;
+        self.hash_state[6] += g;
+        self.hash_state[7] += h;
     }
 
     /// Produce the final hash value
@@ -158,10 +161,10 @@ impl Sha256Digestion {
 
         let mut hash_output: [u8; 32] = [0; 32];
         for (i, h) in self.hash_state.iter().enumerate() {
-            hash_output[(i * 4)] = (h >> 24) as u8;
-            hash_output[(i * 4) + 1] = (h >> 16) as u8;
-            hash_output[(i * 4) + 2] = (h >> 8) as u8;
-            hash_output[(i * 4) + 3] = *h as u8;
+            hash_output[(i * 4)] = (h.0 >> 24) as u8;
+            hash_output[(i * 4) + 1] = (h.0 >> 16) as u8;
+            hash_output[(i * 4) + 2] = (h.0 >> 8) as u8;
+            hash_output[(i * 4) + 3] = h.0 as u8;
         }
 
         hash_output
