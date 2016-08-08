@@ -77,10 +77,10 @@ impl Sha256Digestion {
 
     fn update_hash_state(&mut self) -> () {
         // Convert u8s into u32s
-        let mut M: Vec<u32> = Vec::with_capacity(16);
+        let mut message_block: Vec<u32> = Vec::with_capacity(16);
         for chunk in self.reading_block.chunks(4) {
             assert!(chunk.len() == 4);
-            M.push(
+            message_block.push(
                 (chunk[0] as u32) << 24 |
                 (chunk[1] as u32) << 16 |
                 (chunk[2] as u32) << 8 |
@@ -88,7 +88,7 @@ impl Sha256Digestion {
             );
         }
 
-        let mut W: [u32; 64] = [0; 64];
+        let mut sched: [u32; 64] = [0; 64];
         let mut a: Wrapping<u32> = Wrapping(self.hash_state[0]);
         let mut b: Wrapping<u32> = Wrapping(self.hash_state[1]);
         let mut c: Wrapping<u32> = Wrapping(self.hash_state[2]);
@@ -98,25 +98,25 @@ impl Sha256Digestion {
         let mut g: Wrapping<u32> = Wrapping(self.hash_state[6]);
         let mut h: Wrapping<u32> = Wrapping(self.hash_state[7]);
 
-        for (i, m) in M.iter().enumerate() {
-            W[i] = *m;
+        for (i, m) in message_block.iter().enumerate() {
+            sched[i] = *m;
         }
         for t in 16..64 {
-            W[t] = (Wrapping(l_sigma_1(W[t-2])) + Wrapping(W[t-7]) + Wrapping(l_sigma_0(W[t-15])) + Wrapping(W[t-16])).0;
+            sched[t] = (Wrapping(l_sigma_1(sched[t-2])) + Wrapping(sched[t-7]) + Wrapping(l_sigma_0(sched[t-15])) + Wrapping(sched[t-16])).0;
         }
 
-        // TODO: Use zip(K, W)
+        // TODO: Use zip(K, sched)
         for t in 0..64 {
-            let T1 = h + Wrapping(b_sigma_1(e.0)) + Wrapping(ch(e.0, f.0, g.0)) + Wrapping(K[t]) + Wrapping(W[t]);
-            let T2 = Wrapping(b_sigma_0(a.0)) + Wrapping(maj(a.0, b.0, c.0));
+            let t1 = h + Wrapping(b_sigma_1(e.0)) + Wrapping(ch(e.0, f.0, g.0)) + Wrapping(K[t]) + Wrapping(sched[t]);
+            let t2 = Wrapping(b_sigma_0(a.0)) + Wrapping(maj(a.0, b.0, c.0));
             h = g;
             g = f;
             f = e;
-            e = d + T1;
+            e = d + t1;
             d = c;
             c = b;
             b = a;
-            a = T1 + T2;
+            a = t1 + t2;
         }
 
         self.hash_state[0] = (Wrapping(self.hash_state[0]) + a).0;
@@ -188,13 +188,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn small_message() {
+        // From NIST examples
+        let expected_hash: [u8; 32] = [
+            0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA,
+            0x41, 0x41, 0x40, 0xDE, 0x5D, 0xAE, 0x22, 0x23,
+            0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17, 0x7A, 0x9C,
+            0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD,
+        ];
         let mut s = Sha256Digestion::new();
+        // 'abc'
         s.add_byte(97);
+        s.add_byte(98);
+        s.add_byte(99);
         let h = s.digest();
-        for w in h.iter() {
-            print!("{:x}", w);
-        }
-        println!("");
+        assert_eq!(h, expected_hash);
     }
 }
