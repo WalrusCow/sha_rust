@@ -108,9 +108,8 @@ impl Sha256Digestion {
                 l_sigma_0(sched[t - 15]) + sched[t - 16];
         }
 
-        // TODO: Use zip(K, sched)
-        for t in 0..64 {
-            let t1 = h + b_sigma_1(e) + ch(e, f, g) + Wrapping(K[t]) + sched[t];
+        for (s, k) in sched.iter().zip(K.iter().map(|x| Wrapping(*x))) {
+            let t1 = h + b_sigma_1(e) + ch(e, f, g) + k + *s;
             let t2 = b_sigma_0(a) + maj(a, b, c);
             h = g;
             g = f;
@@ -122,14 +121,9 @@ impl Sha256Digestion {
             a = t1 + t2;
         }
 
-        self.hash_state[0] += a;
-        self.hash_state[1] += b;
-        self.hash_state[2] += c;
-        self.hash_state[3] += d;
-        self.hash_state[4] += e;
-        self.hash_state[5] += f;
-        self.hash_state[6] += g;
-        self.hash_state[7] += h;
+        for (i, v) in [a, b, c, d, e, f, g, h].iter().enumerate() {
+            self.hash_state[i] += *v;
+        }
     }
 
     /// Produce the final hash value
@@ -151,7 +145,6 @@ impl Sha256Digestion {
         while self.reading_block.len() < BLOCK_SIZE_BYTES - 8 {
             self.reading_block.push(0);
         }
-        // TODO: This might also be the wrong way on
         // Now push on the length
         for i in 0..8 {
             self.reading_block.push((self.bit_count >> ((7 - i) * 8)) as u8);
@@ -159,6 +152,7 @@ impl Sha256Digestion {
         self.update_hash_state();
         self.reading_block.clear();
 
+        // Convert into u8
         let mut hash_output: [u8; 32] = [0; 32];
         for (i, h) in self.hash_state.iter().enumerate() {
             hash_output[(i * 4)] = (h.0 >> 24) as u8;
@@ -180,10 +174,6 @@ impl Sha256Digestion {
             self.reading_block.clear();
         }
     }
-
-    // Add Reader
-    // Add Vector, Array, Slice, etc
-    // Any more?
 }
 
 #[cfg(test)]
