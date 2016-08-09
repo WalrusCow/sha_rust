@@ -1,4 +1,5 @@
 use std::num::Wrapping;
+use std::io::Read;
 
 fn rot_r(val: u32, rot: u32) -> u32 {
     assert!(rot < 32);
@@ -56,8 +57,8 @@ const K: [u32; 64] = [
 
 const BLOCK_SIZE_BYTES: usize = 64;
 
-pub struct Sha256Digestion {
-    // Current state of the hash
+pub struct Sha256 {
+    // Current state of the hash. Sha causes intentional wrapping overflows.
     hash_state: [Wrapping<u32>; 8],
     // This is the block we will read the inputs into.
     // To be later converted into u32s for actual sha operations
@@ -66,14 +67,14 @@ pub struct Sha256Digestion {
     bit_count: u64,
 }
 
-impl Sha256Digestion {
-    pub fn new() -> Sha256Digestion {
+impl Sha256 {
+    pub fn new() -> Sha256 {
         let mut hash_state = [Wrapping(0u32); 8];
         for (i, h) in INITIAL_HASH_STATE.iter().enumerate() {
             hash_state[i] = Wrapping(*h);
         }
 
-        Sha256Digestion {
+        Sha256 {
             hash_state: hash_state,
             reading_block: Vec::with_capacity(BLOCK_SIZE_BYTES),
             bit_count: 0,
@@ -176,6 +177,22 @@ impl Sha256Digestion {
     }
 }
 
+pub fn sha256sum_read<R>(reader: &mut R) -> [u8; 32]
+where R: Read {
+    let mut sha = Sha256::new();
+    let mut buf = [0u8; 64];
+    while let Ok(bytes_read) = reader.read(&mut buf) {
+        if bytes_read == 0 {
+            break;
+        } else {
+            for b in buf.iter_mut().take(bytes_read) {
+                sha.add_byte(*b);
+            }
+        }
+    }
+    sha.digest()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,12 +206,31 @@ mod tests {
             0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17, 0x7A, 0x9C,
             0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD,
         ];
-        let mut s = Sha256Digestion::new();
+        let mut s = Sha256::new();
         // 'abc'
         s.add_byte(97);
         s.add_byte(98);
         s.add_byte(99);
         let h = s.digest();
         assert_eq!(h, expected_hash);
+    }
+
+    #[test]
+    fn two_blocks() {
+        // From NIST examples
+        let expected_hash: [u8; 32] = [
+            0x24, 0x8D, 0x6A, 0x61, 0xD2, 0x06, 0x38, 0xB8,
+            0xE5, 0xC0, 0x26, 0x93, 0x0C, 0x3E, 0x60, 0x39,
+            0xA3, 0x3C, 0xE4, 0x59, 0x64, 0xFF, 0x21, 0x67,
+            0xF6, 0xEC, 0xED, 0xD4, 0x19, 0xDB, 0x06, 0xC1,
+        ];
+
+        let message = "abcdbcdecdefdefgefghfghighijhijkijkljkl\
+                       mklmnlmnomnopnopq".as_bytes();
+        let mut sha_digest = Sha256::new();
+        for m in message.iter() {
+            sha_digest.add_byte(*m);
+        }
+        assert_eq!(sha_digest.digest(), expected_hash);
     }
 }

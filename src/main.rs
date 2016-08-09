@@ -1,7 +1,5 @@
 use std::env;
 use std::fs::File;
-use std::io::Read;
-use std::io::Write;
 
 mod sha;
 
@@ -16,35 +14,9 @@ fn main() {
         },
     };
 
-    let mut write_handle = match File::create("./awtpoot") {
-        Ok(f) => f,
-        Err(e) => {
-            println!("Fuck {}", e);
-            return;
-        },
-    };
-
-    let mut buf: [u8; 4096] = [0; 4096];
-    let mut sha_thing = sha::Sha256Digestion::new();
-
-    loop {
-        let bytes_read = match file_handle.read(&mut buf) {
-            Ok(count) => count,
-            Err(_) => {
-                println!("Error reading file.");
-                return;
-            },
-        };
-
-        if bytes_read == 0 {
-            println!("Doooone");
-            break;
-        } else {
-            for b in buf.iter_mut().take(bytes_read) {
-                sha_thing.add_byte(*b);
-            }
-        }
+    let sha_sum = sha::sha256sum_read(&mut file_handle);
+    for b in sha_sum.iter() {
+        print!("{:0>2x} ", b);
     }
-    let m = sha_thing.digest();
-    write_handle.write_all(&m).unwrap();
+    println!("");
 }
